@@ -1,5 +1,6 @@
 import argparse
 import json
+import sys
 import xml.etree.ElementTree as ET
 import yaml
 import logging
@@ -133,7 +134,7 @@ def validate_data(data, schema, file_type):
         elif file_type == 'xml':
             try:
                 # XML validation against XSD is a complex topic that requires additional libraries and careful implementation
-                # This part of the script can be extended to perform more robust XML validation with XSD.
+                # This part of the script can be extended to perform more complete XML validation with XSD.
                 import lxml.etree as lxml_ET
                 xmlschema_doc = lxml_ET.parse(schema)
                 xmlschema = lxml_ET.XMLSchema(xmlschema_doc)
@@ -143,10 +144,10 @@ def validate_data(data, schema, file_type):
                 xmlschema.assertValid(xml_doc)
                 return True
 
-            except lxml.etree.XMLSchemaError as e:
+            except lxml_ET.XMLSchemaError as e:
                 logging.error(f"XML Schema validation error: {e}")
                 return False
-            except lxml.etree.XMLSyntaxError as e:
+            except lxml_ET.XMLSyntaxError as e:
                 logging.error(f"XML Syntax Error: {e}")
                 return False
             except Exception as e:
@@ -203,37 +204,33 @@ def main():
     # Input validation: Check if the file paths are valid
     if not is_valid_file_path(args.file_path):
         print("Invalid file path. Exiting.")
-        return
+        sys.exit(1)
     if not is_valid_file_path(args.schema_path):
         print("Invalid schema path. Exiting.")
-        return
+        sys.exit(1)
 
     try:
+        # Load success is tracked by reaching the next line: load_data and
+        # load_schema raise on any load or parse error. A loaded value of
+        # None (an empty YAML file, or a YAML file holding only null) is a
+        # valid parse and is validated against the schema like any value.
         data = load_data(args.file_path, args.file_type)
         schema = load_schema(args.schema_path, args.file_type)
-
-        if data is not None and schema is not None:
-            if validate_data(data, schema, args.file_type):
-                print("Data validation successful.")
-            else:
-                print("Data validation failed.")
-        else:
-            print("Failed to load data or schema.")
-
     except Exception as e:
         print(f"An error occurred: {e}")
+        sys.exit(1)
+
+    if validate_data(data, schema, args.file_type):
+        print("Data validation successful.")
+        sys.exit(0)
+    else:
+        print("Data validation failed.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    # Example usage (for development and testing):
-    # Create dummy files if they don't exist
-    if not os.path.exists("data.json"):
-        with open("data.json", "w") as f:
-            json.dump({"name": "John Doe", "age": 30}, f)
-    if not os.path.exists("schema.json"):
-        with open("schema.json", "w") as f:
-            json.dump({"type": "object", "properties": {"name": {"type": "string"}, "age": {"type": "integer"}}, "required": ["name", "age"]}, f)
-
     # Example command-line usage:
     # python main.py data.json schema.json --file_type json
+    # The sample data.json and schema.json files shipped in this repo
+    # serve as the example. Running the tool creates no files.
     main()
