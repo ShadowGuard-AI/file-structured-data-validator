@@ -23,6 +23,10 @@ def setup_argparse():
     parser = argparse.ArgumentParser(description="Validates structured data files against a schema.")
     parser.add_argument("file_path", help="Path to the data file.")
     parser.add_argument("schema_path", help="Path to the schema file.")
+    # The type comes from this flag alone. The file extensions are never
+    # consulted, so a JSON file declared as YAML is parsed as YAML, fails
+    # or, worse, parses as something adjacent and validates against the
+    # wrong reading.
     parser.add_argument("--file_type", choices=['json', 'xml', 'yaml'], required=True, help="Type of the data file (json, xml, yaml).")
     return parser
 
@@ -91,6 +95,10 @@ def load_schema(schema_path, file_type):
             elif file_type == 'yaml':
                 schema = yaml.safe_load(f)
             elif file_type == 'xml':
+                # For XML the schema file is never opened here. The path itself is the
+                # schema value, and lxml opens it during validation. A missing or
+                # malformed XSD therefore surfaces at validation time, as a False
+                # result, not at load time as an exception.
                 schema = schema_path  # returns the xsd path as a string
             else:
                 raise ValueError("Unsupported schema file type.")
@@ -138,6 +146,11 @@ def validate_data(data, schema, file_type):
                 import lxml.etree as lxml_ET
                 xmlschema_doc = lxml_ET.parse(schema)
                 xmlschema = lxml_ET.XMLSchema(xmlschema_doc)
+                # The XML takes a round trip: parsed by the standard library parser,
+                # serialised back to a string, and reparsed by lxml for the schema
+                # check. The declaration is lost in that trip, and namespace prefixes
+                # can be rewritten by the serialiser, so a document that leans on its
+                # original prefixes can fail here while being well formed.
                 xml_string = ET.tostring(data)
                 xml_doc = lxml_ET.fromstring(xml_string)
 
@@ -158,6 +171,9 @@ def validate_data(data, schema, file_type):
     except jsonschema.exceptions.ValidationError as e:
         logging.error(f"Validation error: {e}")
         return False
+    # A broken schema returns False, the same as data that fails a good
+    # schema. The two situations share an exit code and a failed line in
+    # main; only this log line says which one happened.
     except jsonschema.exceptions.SchemaError as e:
         logging.error(f"Schema error: {e}")
         return False
